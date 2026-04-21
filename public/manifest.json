@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "VetLaudo",
+  "version": "1.0.0",
+  "description": "Análise hematológica veterinária com IA",
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "VetLaudo"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "options_page": "options.html",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "https://generativelanguage.googleapis.com/*"
+  ]
+}

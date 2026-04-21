@@ -111,15 +111,12 @@ export default function Home() {
     setError('')
     setLoading(true)
     try {
-      const res = await fetch('/api/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageBase64, mimeType: imageMimeType, species }),
+      const response = await new Promise<{ data?: AnalysisResult; error?: string }>(resolve => {
+        chrome.runtime.sendMessage({ type: 'ANALYZE', imageBase64, mimeType: imageMimeType, species }, resolve)
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? 'Erro desconhecido')
+      if (response.error) throw new Error(response.error)
 
-      const result = data as AnalysisResult
+      const result = response.data!
       const el = buildReportElement(result, species)
       document.body.appendChild(el)
 
