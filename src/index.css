@@ -1,0 +1,35 @@
+:root {
+  --bs-primary: #1E90FF;
+  --bs-primary-rgb: 30, 144, 255;
+  --bs-body-bg: #F0F8FF;
+  --bs-body-color: #1a1a2e;
+}
+
+body {
+  background-color: #F0F8FF;
+  -webkit-font-smoothing: antialiased;
+}
+
+.btn-primary {
+  background-color: #1E90FF;
+  border-color: #1E90FF;
+}
+
+.btn-primary:hover,
+.btn-primary:focus {
+  background-color: #1a7de0;
+  border-color: #1a7de0;
+}
+
+.text-primary {
+  color: #1E90FF !important;
+}
+
+.border-primary {
+  border-color: #1E90FF !important;
+}
+
+.card {
+  border: none;
+  box-shadow: 0 2px 12px rgba(30, 144, 255, 0.08);
+}
