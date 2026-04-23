@@ -1,4 +1,3 @@
-import html2pdf from 'html2pdf.js'
 import { useRef, useState } from 'react'
 
 type Species = 'dog' | 'cat'
@@ -94,6 +93,9 @@ export default function Home() {
   function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
+    if (!file.type.startsWith('image/')) { setError('O arquivo selecionado não é uma imagem.'); return }
+    if (file.size > 5 * 1024 * 1024) { setError('A imagem deve ter menos de 5 MB.'); return }
+    setError('')
     const reader = new FileReader()
     reader.onload = ev => {
       const dataUrl = ev.target?.result as string
@@ -120,6 +122,7 @@ export default function Home() {
       const el = buildReportElement(result, species)
       document.body.appendChild(el)
 
+      const html2pdf = (await import('html2pdf.js')).default
       await html2pdf().set({
         margin: 12,
         filename: `VetLaudo_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.pdf`,

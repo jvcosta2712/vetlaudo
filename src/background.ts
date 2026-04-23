@@ -25,9 +25,9 @@ REGRAS OBRIGATÓRIAS:
 - Todo texto em português do Brasil`
 
 const GEMINI_MODELS = [
-  'gemini-2.0-flash',
-  'gemini-1.5-flash',
   'gemini-2.5-flash',
+  'gemini-2.0-flash',
+  'gemini-2.0-flash-lite',
 ]
 
 async function analyzeWithGemini(
@@ -62,6 +62,7 @@ async function analyzeWithGemini(
     if (!response.ok) {
       const err = await response.json().catch(() => ({}))
       lastError = (err as { error?: { message?: string } })?.error?.message ?? `Erro HTTP ${response.status}`
+      console.warn(`[VetLaudo] ${model} falhou: ${lastError}`)
       continue
     }
 
@@ -70,7 +71,7 @@ async function analyzeWithGemini(
     }
 
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
-    if (!text) { lastError = `${model} retornou resposta vazia`; continue }
+    if (!text) { lastError = `${model} retornou resposta vazia`; console.warn(`[VetLaudo] ${model} retornou resposta vazia`); continue }
 
     return text.replace(/^```json\s*/i, '').replace(/\s*```$/, '').trim()
   }
