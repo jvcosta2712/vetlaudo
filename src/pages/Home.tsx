@@ -2,6 +2,18 @@ import { useEffect, useRef, useState } from 'react'
 
 type Species = 'dog' | 'cat'
 
+interface PatientInfo {
+  name: string
+  sex: 'M' | 'F' | ''
+  owner: string
+  vet: string
+  clinic: string
+  breed: string
+  age: string
+  entryDate: string
+  protocol: string
+}
+
 interface Parameter {
   name: string
   value: string
@@ -18,8 +30,8 @@ interface AnalysisResult {
   recommendations: string
 }
 
-function buildReportElement(result: AnalysisResult, species: Species): HTMLElement {
-  const speciesLabel = species === 'dog' ? 'Cão' : 'Gato'
+function buildReportElement(result: AnalysisResult, species: Species, patient: PatientInfo): HTMLElement {
+  const speciesLabel = species === 'dog' ? 'Canina' : 'Felina'
   const date = result.examDate ?? 'Não identificada'
   const generatedAt = new Date().toLocaleString('pt-BR')
 
@@ -38,6 +50,15 @@ function buildReportElement(result: AnalysisResult, species: Species): HTMLEleme
       <td style="padding:8px 12px;border-bottom:1px solid #e8f4ff;">${statusCell(p)}</td>
     </tr>`).join('')
 
+  const field = (label: string, value: string) =>
+    `<span style="font-size:13px;color:#333;"><strong style="color:#1a1a2e;">${label}</strong> ${value || '—'}</span>`
+
+  const formatDate = (d: string) => {
+    if (!d) return ''
+    const [y, m, day] = d.split('-')
+    return day && m && y ? `${day}/${m}/${y}` : d
+  }
+
   const el = document.createElement('div')
   el.style.cssText = 'font-family:Arial,sans-serif;color:#1a1a2e;background:#fff;padding:32px;width:100%;'
   el.innerHTML = `
@@ -49,9 +70,20 @@ function buildReportElement(result: AnalysisResult, species: Species): HTMLEleme
       <div style="text-align:right;font-size:12px;color:#888;">Gerado em: ${generatedAt}</div>
     </div>
 
-    <div style="background:#F0F8FF;border-radius:8px;padding:12px 16px;margin-bottom:20px;display:flex;gap:32px;">
-      <span style="font-size:14px;color:#555;"><strong style="color:#1a1a2e;">Espécie:</strong> ${speciesLabel}</span>
-      <span style="font-size:14px;color:#555;"><strong style="color:#1a1a2e;">Data do Exame:</strong> ${date}</span>
+    <div style="background:#F0F8FF;border-radius:8px;padding:14px 16px;margin-bottom:20px;font-size:13px;line-height:2;">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px 24px;">
+        ${field('Paciente:', patient.name)}
+        ${field('Espécie:', speciesLabel)}
+        ${field('Raça:', patient.breed)}
+        ${field('Sexo(M)(F):', patient.sex)}
+        ${field('Idade:', patient.age)}
+        ${field('Data de entrada:', formatDate(patient.entryDate) || date)}
+        ${field('Proprietário:', patient.owner)}
+        ${field('', '')}
+        ${field('Protocolo:', patient.protocol)}
+        ${field('Médico Veterinário:', patient.vet)}
+        ${field('Clínica Veterinária:', patient.clinic)}
+      </div>
     </div>
 
     <div style="color:#1E90FF;font-size:15px;font-weight:bold;margin:0 0 10px;padding-bottom:8px;border-bottom:2px solid #e8f4ff;">Parâmetros Analisados</div>
@@ -87,8 +119,8 @@ type AnalysisState =
   | { status: 'done'; result: AnalysisResult; species: Species }
   | { status: 'error'; message: string }
 
-async function generatePdf(result: AnalysisResult, species: Species): Promise<void> {
-  const el = buildReportElement(result, species)
+async function generatePdf(result: AnalysisResult, species: Species, patient: PatientInfo): Promise<void> {
+  const el = buildReportElement(result, species, patient)
   document.body.appendChild(el)
   try {
     const html2pdf = (await import('html2pdf.js')).default
@@ -103,28 +135,13 @@ async function generatePdf(result: AnalysisResult, species: Species): Promise<vo
     }).from(el).output('blob')
 
     const url = URL.createObjectURL(blob)
-
-    await new Promise<void>((resolve, reject) => {
-      chrome.downloads.download(
-        {
-          url,
-          // "LaudoVet/" cria a subpasta automaticamente dentro da pasta padrão de downloads.
-          // Para apontar para Documentos, configure o Chrome para baixar em ~/Documents (Mac)
-          // ou em C:\Users\<usuário>\Documents (Windows).
-          filename: `LaudoVet/${filename}`,
-          saveAs: false,
-          conflictAction: 'uniquify',
-        },
-        (downloadId) => {
-          URL.revokeObjectURL(url)
-          if (chrome.runtime.lastError || downloadId === undefined) {
-            reject(new Error(chrome.runtime.lastError?.message ?? 'Falha ao iniciar download'))
-          } else {
-            resolve()
-          }
-        },
-      )
-    })
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
   } finally {
     document.body.removeChild(el)
   }
@@ -132,6 +149,9 @@ async function generatePdf(result: AnalysisResult, species: Species): Promise<vo
 
 export default function Home() {
   const [species, setSpecies] = useState<Species>('dog')
+  const [patient, setPatient] = useState<PatientInfo>({
+    name: '', sex: '', owner: '', vet: '', clinic: '', breed: '', age: '', entryDate: '', protocol: '',
+  })
   const [imageBase64, setImageBase64] = useState('')
   const [imageMimeType, setImageMimeType] = useState('image/jpeg')
   const [imagePreview, setImagePreview] = useState('')
@@ -139,6 +159,12 @@ export default function Home() {
   const [loadingPhase, setLoadingPhase] = useState('Lendo o exame...')
   const [error, setError] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
+  const patientRef = useRef(patient)
+  patientRef.current = patient
+
+  function setField<K extends keyof PatientInfo>(key: K, value: PatientInfo[K]) {
+    setPatient(prev => ({ ...prev, [key]: value }))
+  }
 
   // Ao abrir o popup: recupera estado em andamento ou concluído
   useEffect(() => {
@@ -150,7 +176,7 @@ export default function Home() {
         setLoading(true)
         setLoadingPhase(state.phase)
       } else if (state.status === 'done') {
-        await generatePdf(state.result, state.species).catch(() => {})
+        await generatePdf(state.result, state.species, patientRef.current).catch(() => {})
         chrome.storage.session.remove(['analysisState'])
       } else if (state.status === 'error') {
         setError(state.message)
@@ -172,7 +198,7 @@ export default function Home() {
         setLoadingPhase(state.phase)
       } else if (state.status === 'done') {
         setLoading(false)
-        generatePdf(state.result, state.species).catch((err) => {
+        generatePdf(state.result, state.species, patientRef.current).catch((err) => {
           setError(err instanceof Error ? err.message : 'Erro ao gerar PDF.')
         })
         chrome.storage.session.remove(['analysisState'])
@@ -244,6 +270,106 @@ export default function Home() {
               {s === 'dog' ? 'Cachorro' : 'Gato'}
             </button>
           ))}
+        </div>
+      </div>
+
+      {/* Patient Info */}
+      <div className="card rounded-4 p-4 mb-3">
+        <p className="fw-semibold small text-muted mb-3 text-uppercase" style={{ letterSpacing: '0.05em' }}>
+          Dados do Paciente
+        </p>
+        <div className="row g-2">
+          <div className="col-8">
+            <label className="form-label small fw-semibold mb-1">Paciente</label>
+            <input
+              type="text"
+              className="form-control form-control-sm rounded-3"
+              placeholder="Nome do animal"
+              value={patient.name}
+              onChange={e => setField('name', e.target.value)}
+            />
+          </div>
+          <div className="col-4">
+            <label className="form-label small fw-semibold mb-1">Sexo</label>
+            <select
+              className="form-select form-select-sm rounded-3"
+              value={patient.sex}
+              onChange={e => setField('sex', e.target.value as 'M' | 'F' | '')}
+            >
+              <option value="">—</option>
+              <option value="M">M</option>
+              <option value="F">F</option>
+            </select>
+          </div>
+          <div className="col-6">
+            <label className="form-label small fw-semibold mb-1">Raça</label>
+            <input
+              type="text"
+              className="form-control form-control-sm rounded-3"
+              placeholder="Ex: SRD"
+              value={patient.breed}
+              onChange={e => setField('breed', e.target.value)}
+            />
+          </div>
+          <div className="col-6">
+            <label className="form-label small fw-semibold mb-1">Idade</label>
+            <input
+              type="text"
+              className="form-control form-control-sm rounded-3"
+              placeholder="Ex: 8 anos"
+              value={patient.age}
+              onChange={e => setField('age', e.target.value)}
+            />
+          </div>
+          <div className="col-12">
+            <label className="form-label small fw-semibold mb-1">Proprietário</label>
+            <input
+              type="text"
+              className="form-control form-control-sm rounded-3"
+              placeholder="Nome do tutor"
+              value={patient.owner}
+              onChange={e => setField('owner', e.target.value)}
+            />
+          </div>
+          <div className="col-12">
+            <label className="form-label small fw-semibold mb-1">Médico Veterinário</label>
+            <input
+              type="text"
+              className="form-control form-control-sm rounded-3"
+              placeholder="Nome do veterinário"
+              value={patient.vet}
+              onChange={e => setField('vet', e.target.value)}
+            />
+          </div>
+          <div className="col-12">
+            <label className="form-label small fw-semibold mb-1">Clínica Veterinária</label>
+            <input
+              type="text"
+              className="form-control form-control-sm rounded-3"
+              placeholder="Nome da clínica"
+              value={patient.clinic}
+              onChange={e => setField('clinic', e.target.value)}
+            />
+          </div>
+          <div className="col-6">
+            <label className="form-label small fw-semibold mb-1">Data de Entrada</label>
+            <input
+              type="date"
+              className="form-control form-control-sm rounded-3"
+              value={patient.entryDate}
+              onChange={e => setField('entryDate', e.target.value)}
+            />
+          </div>
+          <div className="col-6">
+            <label className="form-label small fw-semibold mb-1">Protocolo</label>
+            <input
+              type="text"
+              className="form-control form-control-sm rounded-3"
+              placeholder="Nº protocolo"
+              value={patient.protocol}
+              onChange={e => setField('protocol', e.target.value)}
+            />
+          </div>
         </div>
       </div>
 

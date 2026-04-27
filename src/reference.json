@@ -1,0 +1,29 @@
+{
+  "_source": "Santé Laboratório Veterinário — SAIS Nº 08, Brasília/DF — Tabelas de Referência para Exames (Hematologia)",
+  "dog": {
+    "WBC":  { "refMin": 6.0,   "refMax": 17.0,   "unit": "10^3/µL" },
+    "RBC":  { "refMin": 5.5,   "refMax": 8.5,    "unit": "10^6/µL" },
+    "HGB":  { "refMin": 12.0,  "refMax": 18.0,   "unit": "g/dL"    },
+    "HCT":  { "refMin": 37,    "refMax": 55,     "unit": "%"        },
+    "MCV":  { "refMin": 60,    "refMax": 72,     "unit": "fL"       },
+    "MCHC": { "refMin": 31,    "refMax": 37,     "unit": "g/dL"     },
+    "PLT":  { "refMin": 150,   "refMax": 500,    "unit": "mil/mm³"  },
+    "LY":   { "refMin": 0.72,  "refMax": 5.1,    "unit": "10^3/µL"  },
+    "MO":   { "refMin": 0,     "refMax": 1.7,    "unit": "10^3/µL"  },
+    "EO":   { "refMin": 0,     "refMax": 1.7,    "unit": "10^3/µL"  },
+    "GR":   { "refMin": 3.6,   "refMax": 13.09,  "unit": "10^3/µL"  }
+  },
+  "cat": {
+    "WBC":  { "refMin": 5.5,   "refMax": 19.5,   "unit": "10^3/µL" },
+    "RBC":  { "refMin": 5.5,   "refMax": 10.0,   "unit": "10^6/µL" },
+    "HGB":  { "refMin": 8.0,   "refMax": 14.0,   "unit": "g/dL"    },
+    "HCT":  { "refMin": 24,    "refMax": 45,     "unit": "%"        },
+    "MCV":  { "refMin": 39,    "refMax": 55,     "unit": "fL"       },
+    "MCHC": { "refMin": 31,    "refMax": 35,     "unit": "g/dL"     },
+    "PLT":  { "refMin": 150,   "refMax": 500,    "unit": "mil/mm³"  },
+    "LY":   { "refMin": 1.1,   "refMax": 10.73,  "unit": "10^3/µL"  },
+    "MO":   { "refMin": 0.055, "refMax": 0.78,   "unit": "10^3/µL"  },
+    "EO":   { "refMin": 0.11,  "refMax": 2.34,   "unit": "10^3/µL"  },
+    "GR":   { "refMin": 1.93,  "refMax": 14.63,  "unit": "10^3/µL"  }
+  }
+}

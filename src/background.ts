@@ -1,49 +1,68 @@
-const SYSTEM_PROMPT = `Você é um extrator de dados de exames hematológicos veterinários. Sua única tarefa é ler os valores da imagem e retornar um JSON válido.
-
-TABELA DE REFERÊNCIA — copie estes valores EXATOS para refMin, refMax e unit:
-
-        refMin  refMax  unit
-CÃO:
-WBC      6.0    17.0   10^3/µL
-RBC      5.5     8.5   10^6/µL
-HGB     12.0    18.0   g/dL
-HCT     37      55     %
-MCV     60      77     fL
-MCHC    32      36     g/dL
-PLT    200     500     10^3/µL
-LY       1.0     4.8   10^3/µL
-MO       0.15    1.35  10^3/µL
-EO       0.1     1.25  10^3/µL
-GR       3.0    11.5   10^3/µL
-
-GATO:
-WBC      5.5    19.5   10^3/µL
-RBC      5.0    10.0   10^6/µL
-HGB      8.0    15.0   g/dL
-HCT     24      45     %
-MCV     39      55     fL
-MCHC    30      36     g/dL
-PLT    150     600     10^3/µL
-LY       1.5     7.0   10^3/µL
-MO       0.00    0.85  10^3/µL
-EO       0.00    0.75  10^3/µL
-GR       2.5    12.5   10^3/µL
-
-REGRAS OBRIGATÓRIAS:
-1. Retorne SOMENTE o JSON, sem texto antes ou depois, sem markdown, sem blocos de código.
-2. Inclua APENAS estes parâmetros SE estiverem presentes na imagem: WBC, RBC, HGB, HCT, MCV, MCHC, PLT, LY, MO, EO, GR. NÃO inclua MCH. Pare no GR.
-3. Para "value": copie o número exatamente como aparece na imagem.
-4. Para "unit": use SEMPRE a unidade da coluna "unit" da tabela acima — NUNCA copie da imagem.
-5. Para "refMin" e "refMax": use os valores da coluna correspondente da tabela acima.
-6. Para "status": "high" se value > refMax, "low" se value < refMin, "normal" caso contrário.
-7. Para "examDate": se houver uma data de coleta/exame visível na imagem, retorne-a como string "DD/MM/AAAA". Se não houver nenhuma data visível, retorne null. NUNCA invente uma data.
-8. "interpretation" e "recommendations" em português do Brasil, com base nos valores encontrados.
-
-Formato JSON:
-{"examDate":"DD/MM/AAAA ou null","parameters":[{"name":"SIGLA","value":"valor lido","unit":"unidade da tabela","refMin":"min da tabela","refMax":"max da tabela","status":"normal|high|low"}],"interpretation":"texto em português","recommendations":"texto em português"}`
-
 const INVOKE_URL = 'https://integrate.api.nvidia.com/v1/chat/completions'
 const NVIDIA_API_KEY = import.meta.env.VITE_NVIDIA_API_KEY as string
+
+import REFERENCE_DATA from './reference.json'
+
+type SpeciesKey = 'dog' | 'cat'
+type ParamRef = { refMin: number; refMax: number; unit: string }
+type ReferenceTable = Record<SpeciesKey, Record<string, ParamRef>>
+
+const REFERENCE = REFERENCE_DATA as unknown as ReferenceTable
+
+interface Parameter {
+  name: string
+  value: string
+  unit: string
+  refMin: string
+  refMax: string
+  status: 'normal' | 'high' | 'low'
+}
+
+/** Aplica a tabela de referência sobre os valores brutos lidos pela IA.
+ *  status, unit, refMin e refMax são sempre calculados pelo código — nunca pela IA. */
+function applyReference(raw: { name: string; value: string }[], species: string): Parameter[] {
+  const refs = REFERENCE[(species as SpeciesKey) in REFERENCE ? (species as SpeciesKey) : 'dog']
+  return raw
+    .filter(p => p.name in refs)
+    .map(p => {
+      const ref = refs[p.name]
+      const num = parseFloat(p.value.replace(/[^0-9.]/g, ''))
+      const status: Parameter['status'] = isNaN(num)
+        ? 'normal'
+        : num > ref.refMax ? 'high'
+        : num < ref.refMin ? 'low'
+        : 'normal'
+      return {
+        name: p.name,
+        value: p.value,
+        unit: ref.unit,
+        refMin: String(ref.refMin),
+        refMax: String(ref.refMax),
+        status,
+      }
+    })
+}
+
+// Chamada 1: a IA só precisa ler nome e valor numérico de cada parâmetro
+const EXTRACTION_SYSTEM_PROMPT = `Você é um extrator de dados de exames hematológicos veterinários. Leia os valores da imagem e retorne SOMENTE o JSON, sem texto adicional, sem markdown.
+
+REGRAS:
+1. Inclua APENAS: WBC, RBC, HGB, HCT, MCV, MCHC, PLT, LY, MO, EO, GR (se presentes na imagem). Não inclua MCH.
+2. "value": copie apenas o número, sem letras ou sufixos (ex: "19.5" e não "19.5H").
+3. "examDate": data de coleta visível como "DD/MM/AAAA", ou null.
+
+Formato: {"examDate":"DD/MM/AAAA ou null","parameters":[{"name":"SIGLA","value":"número"}]}`
+
+// Chamada 2: gera interpretação e recomendações como texto puro (sem JSON)
+const INTERPRETATION_SYSTEM_PROMPT = `Você é um médico veterinário especialista em hematologia. Receberá os parâmetros de um hemograma e deverá escrever uma análise clínica em português do Brasil.
+
+Retorne EXATAMENTE neste formato, sem texto adicional:
+
+INTERPRETAÇÃO:
+[sua interpretação aqui]
+
+RECOMENDAÇÕES:
+[suas recomendações aqui]`
 
 type AnalysisPhase =
   | 'Lendo o exame...'
@@ -61,50 +80,22 @@ function saveState(state: AnalysisState): void {
   chrome.storage.session.set({ analysisState: state })
 }
 
-function detectPhase(text: string): AnalysisPhase {
-  if (text.includes('"recommendations"')) return 'Finalizando recomendações...'
-  if (text.includes('"interpretation"')) return 'Gerando interpretação clínica...'
-  if (text.includes('"parameters"')) return 'Extraindo parâmetros...'
-  return 'Lendo o exame...'
-}
-
-async function analyzeWithNvidia(
-  imageBase64: string,
-  mimeType: string,
-  species: string,
-  apiKey: string,
+async function streamCompletion(
+  messages: object[],
+  maxTokens: number,
+  onDelta: (text: string) => void,
 ): Promise<string> {
-  const speciesLabel = species === 'dog' ? 'cão' : 'gato'
-
   const response = await fetch(INVOKE_URL, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${apiKey}`,
+      Authorization: `Bearer ${NVIDIA_API_KEY}`,
       'Content-Type': 'application/json',
       Accept: 'text/event-stream',
     },
     body: JSON.stringify({
       model: 'meta/llama-3.2-11b-vision-instruct',
-      messages: [
-        {
-          role: 'system',
-          content: SYSTEM_PROMPT,
-        },
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'text',
-              text: `Espécie: ${speciesLabel}. Leia os valores desta imagem e retorne o JSON.`,
-            },
-            {
-              type: 'image_url',
-              image_url: { url: `data:${mimeType};base64,${imageBase64}` },
-            },
-          ],
-        },
-      ],
-      max_tokens: 1200,
+      messages,
+      max_tokens: maxTokens,
       temperature: 0,
       top_p: 1,
       stream: true,
@@ -136,22 +127,133 @@ async function analyzeWithNvidia(
       try {
         const parsed = JSON.parse(data)
         const delta: string = parsed.choices?.[0]?.delta?.content ?? ''
-        if (delta) {
-          fullText += delta
-          const phase = detectPhase(fullText)
-          saveState({ status: 'loading', phase })
-        }
+        if (delta) { fullText += delta; onDelta(fullText) }
       } catch { /* ignora chunks inválidos */ }
     }
   }
 
   if (!fullText) throw new Error('NVIDIA API retornou resposta vazia')
+  return fullText
+}
 
-  const start = fullText.indexOf('{')
-  const end = fullText.lastIndexOf('}')
-  if (start === -1 || end === -1) throw new Error('Nenhum JSON encontrado na resposta da IA')
+/** Percorre o texto e coleta todos os objetos JSON completos dentro do array "parameters". */
+function parseParamObjects(json: string): unknown[] {
+  const bracket = json.indexOf('"parameters"')
+  if (bracket === -1) return []
+  const arrayOpen = json.indexOf('[', bracket)
+  if (arrayOpen === -1) return []
 
-  return fullText.slice(start, end + 1)
+  const objects: unknown[] = []
+  let i = arrayOpen + 1
+
+  while (i < json.length) {
+    while (i < json.length && /[\s,]/.test(json[i])) i++
+    if (json[i] !== '{') break
+
+    let depth = 0, inStr = false, esc = false
+    const objStart = i
+    for (; i < json.length; i++) {
+      const ch = json[i]
+      if (esc) { esc = false; continue }
+      if (ch === '\\') { esc = true; continue }
+      if (ch === '"') { inStr = !inStr; continue }
+      if (inStr) continue
+      if (ch === '{') depth++
+      else if (ch === '}') {
+        depth--
+        if (depth === 0) {
+          try { objects.push(JSON.parse(json.slice(objStart, i + 1))) } catch { /* skip */ }
+          i++; break
+        }
+      }
+    }
+  }
+  return objects
+}
+
+/** Faz o parse da resposta da extração, tolerando o fechamento incorreto do array pelo modelo. */
+function parseExtractionResponse(raw: string): { examDate: string | null; parameters: unknown[] } {
+  const start = raw.indexOf('{')
+  const end = raw.lastIndexOf('}')
+  if (start === -1 || end === -1) throw new Error('Nenhum JSON encontrado na extração de parâmetros')
+
+  const json = raw.slice(start, end + 1)
+
+  try {
+    return JSON.parse(json) as { examDate: string | null; parameters: unknown[] }
+  } catch { /* o modelo fechou o array com } em vez de ] — extrai as partes individualmente */ }
+
+  const examDateMatch = json.match(/"examDate"\s*:\s*(null|"[^"]*")/)
+  const examDate = examDateMatch
+    ? (examDateMatch[1] === 'null' ? null : JSON.parse(examDateMatch[1]) as string)
+    : null
+
+  return { examDate, parameters: parseParamObjects(json) }
+}
+
+// Chamada 1: visão — extrai examDate + values brutos da imagem, aplica referência em código
+async function extractParameters(
+  imageBase64: string,
+  mimeType: string,
+  species: string,
+): Promise<{ examDate: string | null; parameters: Parameter[] }> {
+  saveState({ status: 'loading', phase: 'Lendo o exame...' })
+
+  const speciesLabel = species === 'dog' ? 'cão' : 'gato'
+
+  const text = await streamCompletion(
+    [
+      { role: 'system', content: EXTRACTION_SYSTEM_PROMPT },
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: `Espécie: ${speciesLabel}. Extraia os parâmetros desta imagem.` },
+          { type: 'image_url', image_url: { url: `data:${mimeType};base64,${imageBase64}` } },
+        ],
+      },
+    ],
+    600,
+    () => saveState({ status: 'loading', phase: 'Extraindo parâmetros...' }),
+  )
+
+  const { examDate, parameters: raw } = parseExtractionResponse(text)
+  // status, unit, refMin, refMax são sempre calculados pelo código — nunca pela IA
+  return { examDate, parameters: applyReference(raw as { name: string; value: string }[], species) }
+}
+
+// Chamada 2: texto — gera interpretação e recomendações
+async function generateInterpretation(
+  parameters: Parameter[],
+  species: string,
+): Promise<{ interpretation: string; recommendations: string }> {
+  saveState({ status: 'loading', phase: 'Gerando interpretação clínica...' })
+
+  const speciesLabel = species === 'dog' ? 'Cão' : 'Gato'
+  const table = (parameters as Parameter[])
+    .map(p => `${p.name}: ${p.value} ${p.unit} (ref: ${p.refMin}–${p.refMax}) → ${p.status}`)
+    .join('\n')
+
+  const text = await streamCompletion(
+    [
+      { role: 'system', content: INTERPRETATION_SYSTEM_PROMPT },
+      { role: 'user', content: `Espécie: ${speciesLabel}\n\nParâmetros:\n${table}` },
+    ],
+    1000,
+    (accumulated) => {
+      const phase: AnalysisPhase = accumulated.includes('RECOMENDAÇÕES')
+        ? 'Finalizando recomendações...'
+        : 'Gerando interpretação clínica...'
+      saveState({ status: 'loading', phase })
+    },
+  )
+
+  const interpMatch = text.match(/INTERPRETAÇÃO:\s*([\s\S]*?)(?=RECOMENDAÇÕES:|$)/)
+  const recsMatch = text.match(/RECOMENDAÇÕES:\s*([\s\S]*)/)
+
+  return {
+    interpretation: interpMatch?.[1]?.trim() ?? text.trim(),
+    recommendations: recsMatch?.[1]?.trim() ?? '',
+  }
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
@@ -171,17 +273,23 @@ async function handleAnalyze(message: {
     return
   }
 
-  saveState({ status: 'loading', phase: 'Lendo o exame...' })
-
   try {
-    const text = await analyzeWithNvidia(
+    const { examDate, parameters } = await extractParameters(
       message.imageBase64,
       message.mimeType,
       message.species,
-      NVIDIA_API_KEY,
     )
-    const result = JSON.parse(text)
-    saveState({ status: 'done', result, species: message.species })
+
+    const { interpretation, recommendations } = await generateInterpretation(
+      parameters,
+      message.species,
+    )
+
+    saveState({
+      status: 'done',
+      result: { examDate, parameters, interpretation, recommendations },
+      species: message.species,
+    })
   } catch (err) {
     saveState({ status: 'error', message: err instanceof Error ? err.message : 'Erro desconhecido' })
   }
