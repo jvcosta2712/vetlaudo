@@ -43,15 +43,15 @@ function buildReportElement(result: AnalysisResult, species: Species, patient: P
 
   const rows = result.parameters.map(p => `
     <tr style="background:${p.status !== 'normal' ? '#fff8f8' : 'transparent'};">
-      <td style="padding:8px 12px;font-weight:600;border-bottom:1px solid #e8f4ff;">${p.name}</td>
-      <td style="padding:8px 12px;font-weight:${p.status !== 'normal' ? 'bold' : 'normal'};color:${p.status === 'high' ? '#dc3545' : p.status === 'low' ? '#fd7e14' : 'inherit'};border-bottom:1px solid #e8f4ff;">${p.value}</td>
-      <td style="padding:8px 12px;color:#666;border-bottom:1px solid #e8f4ff;">${p.unit}</td>
-      <td style="padding:8px 12px;color:#666;border-bottom:1px solid #e8f4ff;">${p.refMin} – ${p.refMax}</td>
-      <td style="padding:8px 12px;border-bottom:1px solid #e8f4ff;">${statusCell(p)}</td>
+      <td style="padding:3px 8px;font-weight:600;border-bottom:1px solid #e8f4ff;">${p.name}</td>
+      <td style="padding:3px 8px;font-weight:${p.status !== 'normal' ? 'bold' : 'normal'};color:${p.status === 'high' ? '#dc3545' : p.status === 'low' ? '#fd7e14' : 'inherit'};border-bottom:1px solid #e8f4ff;">${p.value}</td>
+      <td style="padding:3px 8px;color:#666;border-bottom:1px solid #e8f4ff;">${p.unit}</td>
+      <td style="padding:3px 8px;color:#666;border-bottom:1px solid #e8f4ff;">${p.refMin} – ${p.refMax}</td>
+      <td style="padding:3px 8px;border-bottom:1px solid #e8f4ff;">${statusCell(p)}</td>
     </tr>`).join('')
 
   const field = (label: string, value: string) =>
-    `<span style="font-size:13px;color:#333;"><strong style="color:#1a1a2e;">${label}</strong> ${value || '—'}</span>`
+    `<span style="font-size:11px;color:#333;"><strong style="color:#1a1a2e;">${label}</strong> ${value || '—'}</span>`
 
   const formatDate = (d: string) => {
     if (!d) return ''
@@ -60,53 +60,52 @@ function buildReportElement(result: AnalysisResult, species: Species, patient: P
   }
 
   const el = document.createElement('div')
-  el.style.cssText = 'font-family:Arial,sans-serif;color:#1a1a2e;background:#fff;padding:32px;width:100%;'
+  el.style.cssText = 'font-family:Arial,sans-serif;color:#1a1a2e;background:#fff;padding:16px;width:100%;'
   el.innerHTML = `
-    <div style="border-bottom:3px solid #1E90FF;padding-bottom:16px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:flex-end;">
+    <div style="border-bottom:2px solid #1E90FF;padding-bottom:8px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:flex-end;">
       <div>
-        <div style="color:#1E90FF;font-size:24px;font-weight:bold;">VetLaudo</div>
-        <div style="color:#888;font-size:12px;margin-top:4px;">Laudo Hematológico Veterinário</div>
+        <div style="color:#1E90FF;font-size:18px;font-weight:bold;">VetLaudo</div>
+        <div style="color:#888;font-size:10px;margin-top:2px;">Laudo Hematológico Veterinário</div>
       </div>
-      <div style="text-align:right;font-size:12px;color:#888;">Gerado em: ${generatedAt}</div>
+      <div style="text-align:right;font-size:10px;color:#888;">Gerado em: ${generatedAt}</div>
     </div>
 
-    <div style="background:#F0F8FF;border-radius:8px;padding:14px 16px;margin-bottom:20px;font-size:13px;line-height:2;">
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px 24px;">
+    <div style="background:#F0F8FF;border-radius:6px;padding:8px 12px;margin-bottom:10px;font-size:11px;line-height:1.6;">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:2px 16px;">
         ${field('Paciente:', patient.name)}
         ${field('Espécie:', speciesLabel)}
         ${field('Raça:', patient.breed)}
-        ${field('Sexo(M)(F):', patient.sex)}
+        ${field('Sexo:', patient.sex)}
         ${field('Idade:', patient.age)}
         ${field('Data de entrada:', formatDate(patient.entryDate) || date)}
         ${field('Proprietário:', patient.owner)}
-        ${field('', '')}
         ${field('Protocolo:', patient.protocol)}
-        ${field('Médico Veterinário:', patient.vet)}
-        ${field('Clínica Veterinária:', patient.clinic)}
+        ${field('Méd. Veterinário:', patient.vet)}
+        ${field('Clínica:', patient.clinic)}
       </div>
     </div>
 
-    <div style="color:#1E90FF;font-size:15px;font-weight:bold;margin:0 0 10px;padding-bottom:8px;border-bottom:2px solid #e8f4ff;">Parâmetros Analisados</div>
-    <table style="width:100%;border-collapse:collapse;font-size:14px;margin-bottom:20px;">
+    <div style="color:#1E90FF;font-size:12px;font-weight:bold;margin:0 0 5px;padding-bottom:4px;border-bottom:1px solid #e8f4ff;">Parâmetros Analisados</div>
+    <table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:10px;">
       <thead>
         <tr style="background:#1E90FF;color:white;">
-          <td style="padding:10px 12px;font-weight:600;">Parâmetro</td>
-          <td style="padding:10px 12px;font-weight:600;">Valor</td>
-          <td style="padding:10px 12px;font-weight:600;">Unidade</td>
-          <td style="padding:10px 12px;font-weight:600;">Referência</td>
-          <td style="padding:10px 12px;font-weight:600;">Status</td>
+          <td style="padding:4px 8px;font-weight:600;">Parâmetro</td>
+          <td style="padding:4px 8px;font-weight:600;">Valor</td>
+          <td style="padding:4px 8px;font-weight:600;">Unidade</td>
+          <td style="padding:4px 8px;font-weight:600;">Referência</td>
+          <td style="padding:4px 8px;font-weight:600;">Status</td>
         </tr>
       </thead>
       <tbody>${rows}</tbody>
     </table>
 
-    <div style="color:#1E90FF;font-size:15px;font-weight:bold;margin:0 0 10px;padding-bottom:8px;border-bottom:2px solid #e8f4ff;">Interpretação Clínica</div>
-    <p style="font-size:14px;line-height:1.8;color:#333;white-space:pre-line;margin-bottom:20px;">${result.interpretation}</p>
+    <div style="color:#1E90FF;font-size:12px;font-weight:bold;margin:0 0 5px;padding-bottom:4px;border-bottom:1px solid #e8f4ff;">Interpretação Clínica</div>
+    <p style="font-size:11px;line-height:1.5;color:#333;white-space:pre-line;margin-bottom:10px;">${result.interpretation}</p>
 
-    <div style="color:#1E90FF;font-size:15px;font-weight:bold;margin:0 0 10px;padding-bottom:8px;border-bottom:2px solid #e8f4ff;">Recomendações</div>
-    <p style="font-size:14px;line-height:1.8;color:#333;white-space:pre-line;margin-bottom:32px;">${result.recommendations}</p>
+    <div style="color:#1E90FF;font-size:12px;font-weight:bold;margin:0 0 5px;padding-bottom:4px;border-bottom:1px solid #e8f4ff;">Recomendações</div>
+    <p style="font-size:11px;line-height:1.5;color:#333;white-space:pre-line;margin-bottom:10px;">${result.recommendations}</p>
 
-    <div style="text-align:center;font-size:11px;color:#aaa;border-top:1px solid #eee;padding-top:12px;">
+    <div style="text-align:center;font-size:9px;color:#aaa;border-top:1px solid #eee;padding-top:6px;">
       Este laudo não substitui a avaliação clínica presencial de um médico veterinário.
     </div>
   `
@@ -124,10 +123,10 @@ async function generatePdf(result: AnalysisResult, species: Species, patient: Pa
   document.body.appendChild(el)
   try {
     const html2pdf = (await import('html2pdf.js')).default
-    const filename = `VetLaudo_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.pdf`
+    const filename = `VetLaudo_${patient.name}_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.pdf`
 
     const blob: Blob = await html2pdf().set({
-      margin: 12,
+      margin: 8,
       filename,
       image: { type: 'jpeg', quality: 0.98 },
       html2canvas: { scale: 2, useCORS: true },
@@ -176,7 +175,7 @@ export default function Home() {
         setLoading(true)
         setLoadingPhase(state.phase)
       } else if (state.status === 'done') {
-        await generatePdf(state.result, state.species, patientRef.current).catch(() => {})
+        await generatePdf(state.result, state.species, patientRef.current).catch(() => { })
         chrome.storage.session.remove(['analysisState'])
       } else if (state.status === 'error') {
         setError(state.message)
