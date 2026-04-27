@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 type Species = 'dog' | 'cat'
 
@@ -20,7 +20,7 @@ interface AnalysisResult {
 
 function buildReportElement(result: AnalysisResult, species: Species): HTMLElement {
   const speciesLabel = species === 'dog' ? 'Cão' : 'Gato'
-  const date = result.examDate ?? new Date().toLocaleDateString('pt-BR')
+  const date = result.examDate ?? 'Não identificada'
   const generatedAt = new Date().toLocaleString('pt-BR')
 
   const statusCell = (p: Parameter) => {
@@ -81,14 +81,111 @@ function buildReportElement(result: AnalysisResult, species: Species): HTMLEleme
   return el
 }
 
+type AnalysisState =
+  | { status: 'idle' }
+  | { status: 'loading'; phase: string }
+  | { status: 'done'; result: AnalysisResult; species: Species }
+  | { status: 'error'; message: string }
+
+async function generatePdf(result: AnalysisResult, species: Species): Promise<void> {
+  const el = buildReportElement(result, species)
+  document.body.appendChild(el)
+  try {
+    const html2pdf = (await import('html2pdf.js')).default
+    const filename = `VetLaudo_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.pdf`
+
+    const blob: Blob = await html2pdf().set({
+      margin: 12,
+      filename,
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: { scale: 2, useCORS: true },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+    }).from(el).output('blob')
+
+    const url = URL.createObjectURL(blob)
+
+    await new Promise<void>((resolve, reject) => {
+      chrome.downloads.download(
+        {
+          url,
+          // "LaudoVet/" cria a subpasta automaticamente dentro da pasta padrão de downloads.
+          // Para apontar para Documentos, configure o Chrome para baixar em ~/Documents (Mac)
+          // ou em C:\Users\<usuário>\Documents (Windows).
+          filename: `LaudoVet/${filename}`,
+          saveAs: false,
+          conflictAction: 'uniquify',
+        },
+        (downloadId) => {
+          URL.revokeObjectURL(url)
+          if (chrome.runtime.lastError || downloadId === undefined) {
+            reject(new Error(chrome.runtime.lastError?.message ?? 'Falha ao iniciar download'))
+          } else {
+            resolve()
+          }
+        },
+      )
+    })
+  } finally {
+    document.body.removeChild(el)
+  }
+}
+
 export default function Home() {
   const [species, setSpecies] = useState<Species>('dog')
   const [imageBase64, setImageBase64] = useState('')
   const [imageMimeType, setImageMimeType] = useState('image/jpeg')
   const [imagePreview, setImagePreview] = useState('')
   const [loading, setLoading] = useState(false)
+  const [loadingPhase, setLoadingPhase] = useState('Lendo o exame...')
   const [error, setError] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
+
+  // Ao abrir o popup: recupera estado em andamento ou concluído
+  useEffect(() => {
+    chrome.storage.session.get(['analysisState'], async (stored) => {
+      const state = stored.analysisState as AnalysisState | undefined
+      if (!state || state.status === 'idle') return
+
+      if (state.status === 'loading') {
+        setLoading(true)
+        setLoadingPhase(state.phase)
+      } else if (state.status === 'done') {
+        await generatePdf(state.result, state.species).catch(() => {})
+        chrome.storage.session.remove(['analysisState'])
+      } else if (state.status === 'error') {
+        setError(state.message)
+        chrome.storage.session.remove(['analysisState'])
+      }
+    })
+
+    // Ouve mudanças de estado vindas do background (mesmo com popup fechado e reaberto)
+    const onStorageChanged = (
+      changes: { [key: string]: chrome.storage.StorageChange },
+      area: string,
+    ) => {
+      if (area !== 'session' || !changes.analysisState) return
+      const state = changes.analysisState.newValue as AnalysisState | undefined
+      if (!state) return
+
+      if (state.status === 'loading') {
+        setLoading(true)
+        setLoadingPhase(state.phase)
+      } else if (state.status === 'done') {
+        setLoading(false)
+        generatePdf(state.result, state.species).catch((err) => {
+          setError(err instanceof Error ? err.message : 'Erro ao gerar PDF.')
+        })
+        chrome.storage.session.remove(['analysisState'])
+      } else if (state.status === 'error') {
+        setLoading(false)
+        setError(state.message)
+        chrome.storage.session.remove(['analysisState'])
+      }
+    }
+
+    chrome.storage.onChanged.addListener(onStorageChanged)
+    return () => chrome.storage.onChanged.removeListener(onStorageChanged)
+  }, [])
 
   function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -108,35 +205,12 @@ export default function Home() {
     reader.readAsDataURL(file)
   }
 
-  async function handleGenerate() {
+  function handleGenerate() {
     if (!imageBase64) { setError('Adicione a foto do exame de sangue.'); return }
     setError('')
     setLoading(true)
-    try {
-      const response = await new Promise<{ data?: AnalysisResult; error?: string }>(resolve => {
-        chrome.runtime.sendMessage({ type: 'ANALYZE', imageBase64, mimeType: imageMimeType, species }, resolve)
-      })
-      if (response.error) throw new Error(response.error)
-
-      const result = response.data!
-      const el = buildReportElement(result, species)
-      document.body.appendChild(el)
-
-      const html2pdf = (await import('html2pdf.js')).default
-      await html2pdf().set({
-        margin: 12,
-        filename: `VetLaudo_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.pdf`,
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-      }).from(el).save()
-
-      document.body.removeChild(el)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Tente novamente.')
-    } finally {
-      setLoading(false)
-    }
+    setLoadingPhase('Lendo o exame...')
+    chrome.runtime.sendMessage({ type: 'ANALYZE', imageBase64, mimeType: imageMimeType, species })
   }
 
   return (
@@ -226,7 +300,7 @@ export default function Home() {
           <div className="card rounded-4 p-5 text-center shadow-lg" style={{ maxWidth: 320 }}>
             <div className="spinner-border text-primary mx-auto mb-3" style={{ width: 44, height: 44 }} />
             <p className="fw-bold mb-1" style={{ color: '#1a1a2e' }}>Analisando o exame...</p>
-            <p className="text-muted small mb-0">A IA está lendo os valores. Isso pode levar alguns segundos.</p>
+            <p className="text-muted small mb-0">{loadingPhase}</p>
           </div>
         </div>
       )}
