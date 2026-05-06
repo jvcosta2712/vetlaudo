@@ -18,8 +18,32 @@ interface AnalysisResult {
   recommendations: string
 }
 
-function buildReportElement(result: AnalysisResult, species: Species): HTMLElement {
-  const speciesLabel = species === 'dog' ? 'Cão' : 'Gato'
+interface PatientInfo {
+  paciente: string
+  sexo: string
+  proprietario: string
+  medico: string
+  clinica: string
+  idade: string
+  raca: string
+  dataEntrada: string
+  protocolo: string
+}
+
+const emptyInfo: PatientInfo = {
+  paciente: '',
+  sexo: '',
+  proprietario: '',
+  medico: '',
+  clinica: '',
+  idade: '',
+  raca: '',
+  dataEntrada: '',
+  protocolo: '',
+}
+
+function buildReportElement(result: AnalysisResult, species: Species, info: PatientInfo): HTMLElement {
+  const speciesLabel = species === 'dog' ? 'Canino' : 'Felino'
   const date = result.examDate ?? 'Não identificada'
   const generatedAt = new Date().toLocaleString('pt-BR')
 
@@ -29,7 +53,7 @@ function buildReportElement(result: AnalysisResult, species: Species): HTMLEleme
     return `<span style="color:#198754;">Normal</span>`
   }
 
-  const rows = result.parameters.map(p => `
+  const rows = (result.parameters ?? []).map(p => `
     <tr style="background:${p.status !== 'normal' ? '#fff8f8' : 'transparent'};">
       <td style="padding:8px 12px;font-weight:600;border-bottom:1px solid #e8f4ff;">${p.name}</td>
       <td style="padding:8px 12px;font-weight:${p.status !== 'normal' ? 'bold' : 'normal'};color:${p.status === 'high' ? '#dc3545' : p.status === 'low' ? '#fd7e14' : 'inherit'};border-bottom:1px solid #e8f4ff;">${p.value}</td>
@@ -37,6 +61,9 @@ function buildReportElement(result: AnalysisResult, species: Species): HTMLEleme
       <td style="padding:8px 12px;color:#666;border-bottom:1px solid #e8f4ff;">${p.refMin} – ${p.refMax}</td>
       <td style="padding:8px 12px;border-bottom:1px solid #e8f4ff;">${statusCell(p)}</td>
     </tr>`).join('')
+
+  const cell = (label: string, value: string) =>
+    `<span style="font-size:13px;color:#555;"><strong style="color:#1a1a2e;">${label}:</strong> ${value || '—'}</span>`
 
   const el = document.createElement('div')
   el.style.cssText = 'font-family:Arial,sans-serif;color:#1a1a2e;background:#fff;padding:32px;width:100%;'
@@ -49,9 +76,24 @@ function buildReportElement(result: AnalysisResult, species: Species): HTMLEleme
       <div style="text-align:right;font-size:12px;color:#888;">Gerado em: ${generatedAt}</div>
     </div>
 
-    <div style="background:#F0F8FF;border-radius:8px;padding:12px 16px;margin-bottom:20px;display:flex;gap:32px;">
-      <span style="font-size:14px;color:#555;"><strong style="color:#1a1a2e;">Espécie:</strong> ${speciesLabel}</span>
-      <span style="font-size:14px;color:#555;"><strong style="color:#1a1a2e;">Data do Exame:</strong> ${date}</span>
+    <div style="background:#F0F8FF;border-radius:8px;padding:14px 16px;margin-bottom:20px;">
+      <div style="display:flex;flex-wrap:wrap;gap:10px 32px;margin-bottom:10px;">
+        ${cell('Paciente', info.paciente)}
+        ${cell('Espécie', speciesLabel)}
+        ${cell('Raça', info.raca)}
+        ${cell('Data de entrada', info.dataEntrada || date)}
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:10px 32px;margin-bottom:${info.medico || info.clinica ? '10px' : '0'};">
+        ${cell('Sexo(M) (F)', info.sexo)}
+        ${cell('Idade', info.idade)}
+        ${cell('Proprietário', info.proprietario)}
+        ${cell('Protocolo', info.protocolo)}
+      </div>
+      ${info.medico || info.clinica ? `
+      <div style="display:flex;flex-wrap:wrap;gap:10px 32px;">
+        ${info.medico ? cell('Médico Veterinário', info.medico) : ''}
+        ${info.clinica ? cell('Clínica Veterinária', info.clinica) : ''}
+      </div>` : ''}
     </div>
 
     <div style="color:#1E90FF;font-size:15px;font-weight:bold;margin:0 0 10px;padding-bottom:8px;border-bottom:2px solid #e8f4ff;">Parâmetros Analisados</div>
@@ -87,8 +129,8 @@ type AnalysisState =
   | { status: 'done'; result: AnalysisResult; species: Species }
   | { status: 'error'; message: string }
 
-async function generatePdf(result: AnalysisResult, species: Species): Promise<void> {
-  const el = buildReportElement(result, species)
+async function generatePdf(result: AnalysisResult, species: Species, info: PatientInfo): Promise<void> {
+  const el = buildReportElement(result, species, info)
   document.body.appendChild(el)
   try {
     const html2pdf = (await import('html2pdf.js')).default
@@ -108,9 +150,6 @@ async function generatePdf(result: AnalysisResult, species: Species): Promise<vo
       chrome.downloads.download(
         {
           url,
-          // "LaudoVet/" cria a subpasta automaticamente dentro da pasta padrão de downloads.
-          // Para apontar para Documentos, configure o Chrome para baixar em ~/Documents (Mac)
-          // ou em C:\Users\<usuário>\Documents (Windows).
           filename: `LaudoVet/${filename}`,
           saveAs: false,
           conflictAction: 'uniquify',
@@ -130,17 +169,31 @@ async function generatePdf(result: AnalysisResult, species: Species): Promise<vo
   }
 }
 
+function getStoredInfo(): Promise<PatientInfo> {
+  return new Promise(resolve =>
+    chrome.storage.session.get(['patientInfo'], r =>
+      resolve((r.patientInfo as PatientInfo | undefined) ?? emptyInfo)
+    )
+  )
+}
+
 export default function Home() {
   const [species, setSpecies] = useState<Species>('dog')
+  const [info, setInfo] = useState<PatientInfo>(emptyInfo)
   const [imageBase64, setImageBase64] = useState('')
   const [imageMimeType, setImageMimeType] = useState('image/jpeg')
   const [imagePreview, setImagePreview] = useState('')
   const [loading, setLoading] = useState(false)
   const [loadingPhase, setLoadingPhase] = useState('Lendo o exame...')
   const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Ao abrir o popup: recupera estado em andamento ou concluído
+  function setField(field: keyof PatientInfo, value: string) {
+    setInfo(prev => ({ ...prev, [field]: value }))
+  }
+
   useEffect(() => {
     chrome.storage.session.get(['analysisState'], async (stored) => {
       const state = stored.analysisState as AnalysisState | undefined
@@ -150,7 +203,8 @@ export default function Home() {
         setLoading(true)
         setLoadingPhase(state.phase)
       } else if (state.status === 'done') {
-        await generatePdf(state.result, state.species).catch(() => {})
+        const storedInfo = await getStoredInfo()
+        await generatePdf(state.result, state.species, storedInfo).catch(() => {})
         chrome.storage.session.remove(['analysisState'])
       } else if (state.status === 'error') {
         setError(state.message)
@@ -158,7 +212,6 @@ export default function Home() {
       }
     })
 
-    // Ouve mudanças de estado vindas do background (mesmo com popup fechado e reaberto)
     const onStorageChanged = (
       changes: { [key: string]: chrome.storage.StorageChange },
       area: string,
@@ -171,12 +224,22 @@ export default function Home() {
         setLoading(true)
         setLoadingPhase(state.phase)
       } else if (state.status === 'done') {
-        setLoading(false)
-        generatePdf(state.result, state.species).catch((err) => {
-          setError(err instanceof Error ? err.message : 'Erro ao gerar PDF.')
-        })
+        if (timeoutRef.current) clearTimeout(timeoutRef.current)
+        setLoadingPhase('Gerando PDF...')
+        getStoredInfo().then(storedInfo =>
+          generatePdf(state.result, state.species, storedInfo)
+            .then(() => {
+              setLoading(false)
+              setSuccess('PDF gerado e salvo em Downloads/LaudoVet/ ✓')
+            })
+            .catch((err) => {
+              setLoading(false)
+              setError(err instanceof Error ? err.message : 'Erro ao gerar PDF.')
+            })
+        )
         chrome.storage.session.remove(['analysisState'])
       } else if (state.status === 'error') {
+        if (timeoutRef.current) clearTimeout(timeoutRef.current)
         setLoading(false)
         setError(state.message)
         chrome.storage.session.remove(['analysisState'])
@@ -208,15 +271,25 @@ export default function Home() {
   function handleGenerate() {
     if (!imageBase64) { setError('Adicione a foto do exame de sangue.'); return }
     setError('')
+    setSuccess('')
     setLoading(true)
     setLoadingPhase('Lendo o exame...')
+    chrome.storage.session.set({ patientInfo: info })
     chrome.runtime.sendMessage({ type: 'ANALYZE', imageBase64, mimeType: imageMimeType, species })
+
+    timeoutRef.current = setTimeout(() => {
+      setLoading(false)
+      setError('A análise demorou demais. Verifique sua conexão e tente novamente.')
+      chrome.storage.session.remove(['analysisState'])
+    }, 90_000)
   }
+
+  const inputClass = 'form-control form-control-sm rounded-3'
 
   return (
     <div className="container py-4" style={{ maxWidth: 560 }}>
       {/* Header */}
-      <div className="text-center mb-5 pt-2">
+      <div className="text-center mb-4 pt-2">
         <div
           className="rounded-3 d-inline-flex align-items-center justify-content-center mb-3"
           style={{ width: 64, height: 64, backgroundColor: '#1E90FF', fontSize: 32 }}
@@ -225,6 +298,62 @@ export default function Home() {
         </div>
         <h1 className="h3 fw-bold mb-1" style={{ color: '#1a1a2e' }}>VetLaudo</h1>
         <p className="text-muted small">Análise hematológica veterinária com IA</p>
+      </div>
+
+      {/* Patient Info */}
+      <div className="card rounded-4 p-4 mb-3">
+        <p className="fw-semibold small text-muted mb-3 text-uppercase" style={{ letterSpacing: '0.05em' }}>
+          Dados do Paciente
+        </p>
+        <div className="row g-2">
+          <div className="col-8">
+            <label className="form-label small mb-1">Paciente</label>
+            <input className={inputClass} placeholder="Nome do animal" value={info.paciente} onChange={e => setField('paciente', e.target.value)} />
+          </div>
+          <div className="col-4">
+            <label className="form-label small mb-1">Sexo</label>
+            <div className="d-flex gap-1">
+              {(['M', 'F'] as const).map(s => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => setField('sexo', info.sexo === s ? '' : s)}
+                  className={`btn btn-sm flex-fill fw-semibold rounded-3 ${info.sexo === s ? 'btn-primary' : 'btn-outline-secondary'}`}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="col-8">
+            <label className="form-label small mb-1">Proprietário</label>
+            <input className={inputClass} placeholder="Nome do tutor" value={info.proprietario} onChange={e => setField('proprietario', e.target.value)} />
+          </div>
+          <div className="col-4">
+            <label className="form-label small mb-1">Idade</label>
+            <input className={inputClass} placeholder="Ex: 5 anos" value={info.idade} onChange={e => setField('idade', e.target.value)} />
+          </div>
+          <div className="col-6">
+            <label className="form-label small mb-1">Raça</label>
+            <input className={inputClass} placeholder="Ex: SRD" value={info.raca} onChange={e => setField('raca', e.target.value)} />
+          </div>
+          <div className="col-6">
+            <label className="form-label small mb-1">Data de Entrada</label>
+            <input className={inputClass} type="date" value={info.dataEntrada} onChange={e => setField('dataEntrada', e.target.value)} />
+          </div>
+          <div className="col-8">
+            <label className="form-label small mb-1">Médico Veterinário</label>
+            <input className={inputClass} placeholder="Nome do veterinário" value={info.medico} onChange={e => setField('medico', e.target.value)} />
+          </div>
+          <div className="col-4">
+            <label className="form-label small mb-1">Protocolo</label>
+            <input className={inputClass} placeholder="Nº" value={info.protocolo} onChange={e => setField('protocolo', e.target.value)} />
+          </div>
+          <div className="col-12">
+            <label className="form-label small mb-1">Clínica Veterinária</label>
+            <input className={inputClass} placeholder="Nome da clínica" value={info.clinica} onChange={e => setField('clinica', e.target.value)} />
+          </div>
+        </div>
       </div>
 
       {/* Species */}
@@ -277,6 +406,7 @@ export default function Home() {
       </div>
 
       {error && <div className="alert alert-danger rounded-3 small py-2 mb-3">{error}</div>}
+      {success && <div className="alert alert-success rounded-3 small py-2 mb-3">{success}</div>}
 
       <button
         onClick={handleGenerate}
